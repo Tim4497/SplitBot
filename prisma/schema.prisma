@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DraftKind {
+  SETUP
+  EXPENSE
+  SETTLEMENT
+  STATUS
+  REVERSAL
+}
+
+enum DraftStatus {
+  OPEN
+  CONFIRMED
+  EXPIRED
+}
+
+model User {
+  id          String         @id @default(cuid())
+  telegramId  BigInt         @unique
+  displayName String
+  createdAt   DateTime       @default(now())
+  ledgersA    Ledger[]       @relation("A")
+  ledgersB    Ledger[]       @relation("B")
+  drafts      ExpenseDraft[] @relation("Creator")
+  candidates  ExpenseDraft[] @relation("Candidate")
+  expenses    Expense[]
+  payments    Settlement[]   @relation("Payer")
+  receipts    Settlement[]   @relation("Recipient")
+  events      LedgerEvent[]
+}
+
+model Ledger {
+  id           String         @id @default(cuid())
+  chatInstance String         @unique
+  participantA String
+  participantB String
+  a            User           @relation("A", fields: [participantA], references: [id])
+  b            User           @relation("B", fields: [participantB], references: [id])
+  currency     String         @default("EUR")
+  status       String         @default("ACTIVE")
+  createdAt    DateTime       @default(now())
+  drafts       ExpenseDraft[]
+  expenses     Expense[]
+  settlements  Settlement[]
+  events       LedgerEvent[]
+
+  @@index([participantA])
+  @@index([participantB])
+}
+
+model ExpenseDraft {
+  id              String       @id @default(cuid())
+  queryId         String       @unique
+  creatorId       String
+  creator         User         @relation("Creator", fields: [creatorId], references: [id])
+  kind            DraftKind
+  amount          Int?
+  description     String
+  expiresAt       DateTime
+  createdAt       DateTime     @default(now())
+  inlineMessageId String?      @unique
+  chatInstance    String?
+  ledgerId        String?
+  ledger          Ledger?      @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  candidateId     String?
+  candidate       User?        @relation("Candidate", fields: [candidateId], references: [id], onDelete: SetNull, map: "draft_candidate_fk")
+  creatorApproved Boolean      @default(false)
+  status          DraftStatus  @default(OPEN)
+  targetEventId   String?
+  expense         Expense?
+  settlement      Settlement?
+  event           LedgerEvent?
+
+  @@index([expiresAt, status])
+  @@index([ledgerId, createdAt])
+}
+
+model Expense {
+  id          String       @id @default(cuid())
+  ledgerId    String
+  ledger      Ledger       @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  payerId     String
+  payer       User         @relation(fields: [payerId], references: [id])
+  amount      Int
+  shareA      Int
+  shareB      Int
+  description String
+  status      String       @default("CONFIRMED")
+  createdAt   DateTime     @default(now())
+  draftId     String       @unique
+  draft       ExpenseDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  event       LedgerEvent?
+
+  @@index([ledgerId, createdAt])
+}
+
+model Settlement {
+  id          String       @id @default(cuid())
+  ledgerId    String
+  ledger      Ledger       @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  payerId     String
+  recipientId String
+  payer       User         @relation("Payer", fields: [payerId], references: [id])
+  recipient   User         @relation("Recipient", fields: [recipientId], references: [id])
+  amount      Int
+  status      String       @default("CONFIRMED")
+  createdAt   DateTime     @default(now())
+  draftId     String       @unique
+  draft       ExpenseDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  event       LedgerEvent?
+
+  @@index([ledgerId, createdAt])
+}
+
+model LedgerEvent {
+  id           String       @id @default(cuid())
+  ledgerId     String
+  ledger       Ledger       @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  actorId      String
+  actor        User         @relation(fields: [actorId], references: [id])
+  kind         String
+  deltaCents   BigInt       @default(0)
+  createdAt    DateTime     @default(now())
+  draftId      String       @unique
+  draft        ExpenseDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  expenseId    String?      @unique
+  expense      Expense?     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  settlementId String?      @unique
+  settlement   Settlement?  @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  reversesId   String?      @unique
+  reverses     LedgerEvent? @relation("Reversal", fields: [reversesId], references: [id], onDelete: Cascade)
+  reversedBy   LedgerEvent? @relation("Reversal")
+
+  @@index([ledgerId, createdAt, id])
+}
