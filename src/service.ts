@@ -1,3 +1,4 @@
+import { retryableTransactionError } from "./transaction-errors.js";
 import {
   Prisma,
   PrismaClient,
@@ -29,11 +30,7 @@ export class LedgerService {
           timeout: 10000,
         });
       } catch (e) {
-        if (
-          e instanceof Prisma.PrismaClientKnownRequestError &&
-          ["P2034", "P2002"].includes(e.code) &&
-          attempt < 5
-        ) {
+        if (retryableTransactionError(e) && attempt < 5) {
           await new Promise((r) => setTimeout(r, 10 * (attempt + 1)));
           continue;
         }
