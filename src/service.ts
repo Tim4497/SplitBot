@@ -133,8 +133,7 @@ export class LedgerService {
     c: Binding,
     expectedCandidate?: string,
   ) {
-    if (!c.chat || !c.message)
-      fail("Nur Inline-Nachrichten werden unterstützt.");
+    if (!c.chat || !c.message) fail("Nur Inline-Nachrichten werden unterstützt.");
     return this.tx(async (tx) => {
       const d = await tx.expenseDraft.findUnique({ where: { id } });
       if (!d) return fail("Nachricht nicht mehr verfügbar.");
@@ -151,12 +150,10 @@ export class LedgerService {
       )
         fail("Entwurf abgelaufen. Bitte neu eingeben.");
       if (!d.chatInstance) {
-        if (!owner || action !== "bind")
-          fail("Zuerst muss die erstellende Person den Chat bestätigen.");
+        if (!owner || action !== "bind") fail("Zuerst muss die erstellende Person den Chat bestätigen.");
         if (d.kind !== "SETUP") {
           const { ledger } = await this.member(tx, who, c.chat);
-          if (d.ledgerId && d.ledgerId !== ledger.id)
-            fail("Falsche Abrechnung.");
+          if (d.ledgerId && d.ledgerId !== ledger.id) fail("Falsche Abrechnung.");
           await tx.expenseDraft.update({
             where: { id },
             data: { ledgerId: ledger.id },
@@ -182,8 +179,7 @@ export class LedgerService {
       if (d.kind === "SETUP" && d.status !== "CONFIRMED") {
         if (action === "bind" && owner) return d;
         if (action === "join" && !owner) {
-          if (d.candidateId && d.candidateId !== u.id)
-            fail("Eine andere Person wartet bereits auf Bestätigung.");
+          if (d.candidateId && d.candidateId !== u.id) fail("Eine andere Person wartet bereits auf Bestätigung.");
           return tx.expenseDraft.update({
             where: { id },
             data: { candidateId: u.id },
@@ -194,10 +190,8 @@ export class LedgerService {
             where: { id },
             data: { candidateId: null },
           });
-        if (action !== "approve" || !owner || !d.candidateId)
-          return fail("Keine Berechtigung für diese Aktion.");
-        if (expectedCandidate !== d.candidateId)
-          return fail("Teilnehmer geändert. Bitte Nachricht aktualisieren.");
+        if (action !== "approve" || !owner || !d.candidateId) return fail("Keine Berechtigung für diese Aktion.");
+        if (expectedCandidate !== d.candidateId) return fail("Teilnehmer geändert. Bitte Nachricht aktualisieren.");
         const l = await tx.ledger.create({
           data: {
             chatInstance: c.chat,
@@ -217,15 +211,10 @@ export class LedgerService {
       if (d.ledgerId !== ledger.id) fail("Falsche Abrechnung.");
       if (d.status === "CONFIRMED") return d; // Membership and immutable binding checked BEFORE idempotent return.
       if ((action === "bind" && owner) || action === "view") return d;
-      if (
-        action !== "confirm" ||
-        owner ||
-        !d.creatorApproved ||
-        d.kind === "STATUS"
-      )
+      // Allow the creator to finalize drafts without the other party's explicit confirmation.
+      if (action !== "confirm" || !d.creatorApproved || d.kind === "STATUS")
         fail("Die andere Person muss bestätigen.");
-      if (![ledger.participantA, ledger.participantB].includes(d.creatorId))
-        fail("Ungültiger Zahler.");
+      if (![ledger.participantA, ledger.participantB].includes(d.creatorId)) fail("Ungültiger Zahler.");
       const payerIsA = d.creatorId === ledger.participantA;
       if (d.kind === "REVERSAL") {
         const target = await tx.ledgerEvent.findUnique({
@@ -250,8 +239,7 @@ export class LedgerService {
           },
         });
       } else {
-        if (d.kind !== "EXPENSE" && d.kind !== "SETTLEMENT")
-          return fail("Ungültige Aktion.");
+        if (d.kind !== "EXPENSE" && d.kind !== "SETTLEMENT") fail("Ungültige Aktion.");
         const amount = d.amount!;
         const change = delta(d.kind, amount, payerIsA);
         const event = {
@@ -280,15 +268,16 @@ export class LedgerService {
         } else {
           const bal = await this.sum(tx, ledger.id);
           const debt = payerIsA ? -bal : bal;
-          if (debt <= 0n || BigInt(amount) > debt)
-            fail(
-              "Zahlung übersteigt die aktuelle Schuld oder hat die falsche Richtung.",
-            );
+          if (debt <= 0n || BigInt(amount) > debt) fail(
+            "Zahlung übersteigt die aktuelle Schuld oder hat die falsche Richtung.",
+          );
+          // Determine the recipient: use the other participant of the ledger, not necessarily the confirmer.
+          const recipientId = d.creatorId === ledger.participantA ? ledger.participantB : ledger.participantA;
           const settlement = await tx.settlement.create({
             data: {
               ledgerId: ledger.id,
               payerId: d.creatorId,
-              recipientId: uid,
+              recipientId,
               amount,
               draftId: d.id,
             },
@@ -310,8 +299,7 @@ export class LedgerService {
         where: { id },
         include: { creator: true },
       });
-      if (!d || d.chatInstance !== c.chat || d.inlineMessageId !== c.message)
-        return fail("Ungültige Nachricht.");
+      if (!d || d.chatInstance !== c.chat || d.inlineMessageId !== c.message) return fail("Ungültige Nachricht.");
       if (d.kind === "SETUP" && d.status === "OPEN") {
         const candidate = d.candidateId
           ? await tx.user.findUnique({ where: { id: d.candidateId } })
