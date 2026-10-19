@@ -5,11 +5,11 @@ A Telegram inline expense ledger for two people in an existing private chat. Ger
 ## What works
 
 - One permanent ledger per callback `chat_instance`, even at zero balance.
-- Explicit setup: creator binds chat, partner joins, creator approves that person's name and numeric Telegram ID.
-- Expense drafts, payer consent, partner confirmation, exact integer-cent netting.
-- Partial/full settlements with both confirmations and commit-time debt validation.
+- Lightweight setup: creator links the chat, and the other person joins to activate it.
+- Creator-finalized expenses with exact integer-cent netting.
+- Partial/full settlements with commit-time debt validation.
 - Private balance alerts, paginated history including pending/expired/confirmed/reversed entries.
-- Two-party cancellation using an inverse audit event; originals remain stored.
+- Creator-triggered cancellation using an inverse audit event; originals remain stored.
 - Unique draft/query keys, immutable chat/message binding, serializable transactions with retries.
 - Polling for development, authenticated webhooks for production, Docker, PostgreSQL migrations, Vitest and GitHub Actions.
 
@@ -17,9 +17,9 @@ A Telegram inline expense ledger for two people in an existing private chat. Ger
 
 An inline query gives the querying user and optionally a chat type, **not the peer or chat ID**. A callback provides the clicking user's ID, `chat_instance` and `inline_message_id`. These are the only identity/routing inputs used. Chosen-result feedback can pin the message, but never books anything.
 
-The implementation rejects inline queries whose `chat_type` is not `private`. However, callbacks on inline messages do not independently prove that the destination is a private 1:1 chat, identify its other member, or reliably identify forwarding. A malicious participant can distribute messages or approve an unintended user. This is a two-consenting-identities boundary, not a Telegram-certified private-chat-membership guarantee.
+The implementation rejects inline queries whose `chat_type` is not `private`. However, callbacks on inline messages do not independently prove that the destination is a private 1:1 chat, identify its other member, or reliably identify forwarding. The first person other than the creator to tap **Beitreten** activates the ledger; the bot cannot verify their relationship to the creator or independently verify private-chat membership. Shared messages can be distributed or forwarded.
 
-Only the draft creator can first bind it. Every later operation must match **both** stored identifiers. This blocks rebinding and cross-chat reuse when Telegram supplies different identifiers. Every financial read/write also checks ledger membership. The creator must approve the precise candidate ID, so a third person's join click alone cannot activate a ledger.
+Only the draft creator can first bind a draft. The creator's **Bestätigen** click immediately records an expense, payment, or reversal. Every later operation must match **both** stored identifiers. Every financial read/write checks ledger membership.
 
 To reduce forwarded-message disclosure, balances and history are shown in **private callback alerts** (Telegram's 200-character limit), not edited into shared messages. History is one entry per page; long descriptions/names are abbreviated for display but kept in the database. A and B in history correspond to the setup creator and joining participant. The initial expense preview is intentionally shared; recipients can forward it, copy it, or take screenshots. Existing Telegram messages and recipient copies cannot be recalled by database erasure.
 
@@ -40,7 +40,7 @@ Official references checked 2026-10-18:
 3. Run `/setinline`, select the bot, and set a placeholder such as `12,50 Essen · saldo · einrichten`.
 4. Run `/setinlinefeedback`, select the bot, and choose **100%**. Feedback is optional for correctness; callbacks also bind the message.
 5. Run `/setjoingroups` and disable group joining. This does **not** disable inline use in groups by itself; application filtering still applies.
-6. Keep privacy mode enabled. Configure the bot description/profile to identify the operator and a real privacy/deletion contact. The built-in privacy text points users to that profile.
+6. Keep privacy mode enabled. Configure the bot description/profile to identify the operator and a real privacy/deletion contact.
 
 ## 2. Run with Docker Compose
 
@@ -111,20 +111,19 @@ Compose overrides `DATABASE_URL` for its internal database hostname. The `.env.e
 Replace `@your_splitbot` with your own username.
 
 1. Anna types `@your_splitbot einrichten` and inserts the result.
-2. Anna taps **Diesen Chat bestätigen**.
-3. Max taps **Als zweite Person beitreten**.
-4. Anna checks the shown name and numeric Telegram ID, then taps **Diese Person bestätigen**. If wrong, she rejects the candidate.
-5. Anna types `@your_splitbot 40€ Abendessen`, inserts the draft and taps **Diesen Chat bestätigen**. Max taps **Bestätigen (andere Person)**.
-6. Use `@your_splitbot saldo`, insert the result, bind it once as its creator, and tap **Kontostand aktualisieren**. Each participant sees the balance privately.
-7. Max records `@your_splitbot 16 Taxi` and both confirm. Balance: Max owes Anna EUR 12.
-8. After Max actually pays Anna, Max records `@your_splitbot ausgleich 12`. Max binds/confirms, Anna confirms receipt. Balance: zero; the ledger remains active.
-9. Weeks later Anna records `@your_splitbot 10 Kino`. Same ledger, Max owes EUR 5.
+2. Anna taps **Bestätigen** to link the chat.
+3. Max taps **Beitreten**; the ledger is active immediately.
+4. Anna types `@your_splitbot 40€ Abendessen`, inserts the draft and taps **Bestätigen**. It is recorded immediately.
+5. Use `@your_splitbot saldo`, insert the result, and tap **Saldo**. Each participant sees the balance privately.
+6. Max records `@your_splitbot 16 Taxi` and taps **Bestätigen**. Balance: Max owes Anna EUR 12.
+7. After Max pays Anna, he records `@your_splitbot ausgleich 12` and taps **Bestätigen**. Balance: zero; the ledger remains active.
+8. Weeks later Anna records `@your_splitbot 10 Kino`. Same ledger, Max owes EUR 5.
 
 `12,50`, `12.50`, `12€`, and `12 EUR` are accepted. Thousands separators, negative/zero amounts, scientific notation, and more than two decimal places are rejected. Description required for expenses, maximum 120 characters. Limit: EUR 10,000,000 per entry. In a EUR 10.01 expense, the payer bears EUR 5.01 and the peer EUR 5.00; the extra cent always stays with the payer.
 
-Only completed confirmations affect balance. A draft expires after 24 hours. Failed/double clicks cannot duplicate booking. A payment exceeding the current debt, or by the wrong debtor, is rejected. Re-enter a corrected draft if a payment is rejected after the balance changed.
+Only creator-confirmed entries affect balance. Setup activates when the second person taps **Beitreten**. A draft expires after 24 hours. Failed/double clicks cannot duplicate booking. A payment exceeding the current debt, or by the wrong debtor, is rejected. Re-enter a corrected draft if a payment is rejected after the balance changed.
 
-For cancellation: open **Verlauf anzeigen**, navigate to the entry, choose **Storno vorbereiten**, insert the resulting inline draft in the same chat, and obtain both confirmations. The original remains visible and the reversal cancels its signed contribution. Undoing an expense after a settlement can correctly create a debt in the opposite direction. Stale balances are snapshots; refresh to obtain the latest committed value.
+For cancellation: open **Verlauf**, navigate to the entry, choose **Storno vorbereiten**, insert the resulting inline draft in the same chat, and tap **Bestätigen**. The original remains visible and the reversal cancels its signed contribution. Undoing an expense after a settlement can correctly create a debt in the opposite direction. Stale balances are snapshots; refresh to obtain the latest committed value.
 
 ## 4. Production webhooks
 
@@ -161,7 +160,7 @@ npm test
 
 `npm test` does not load `.env`; it uses the shell's `DATABASE_URL`. Database tests are explicitly skipped when that variable is absent. `npm run test:unit` runs the pure accounting tests. GitHub Actions supplies PostgreSQL 16, applies migrations, runs all tests and builds the Docker image.
 
-Tests exercise the requested eight acceptance cases plus first-actor binding, peer-only confirmation, forwarded identifiers, third-party setup attempts, duplicate query IDs, concurrent confirmation, overpayment, partial payment, expiration, reversal, actual grammY event dispatch, unknown/group queries and webhook authentication.
+Tests exercise the accounting acceptance cases plus creator-only booking, direct setup activation by the second participant, forwarded identifiers, outsider rejection, duplicate query IDs, concurrent retries, overpayment, partial payment, expiration, reversal, actual grammY event dispatch, unknown/group queries and webhook authentication.
 
 ## Dependency and build warnings
 
@@ -173,7 +172,7 @@ An npm “new major version available” notice is about the package-manager exe
 
 ## Data handling and operations
 
-Stored: Telegram ID, sanitized display name, opaque chat/message identifiers, draft data/expiry, participants, amounts/shares, confirmations, creation timestamps and audit links. No usernames, contact lists, bank data, or normal private messages. Users choose what they put in expense descriptions. The database, backups and operator access must be protected separately; Telegram bots are not an end-to-end encrypted financial vault.
+Stored: Telegram ID, sanitized display name, opaque chat/message identifiers, draft data/expiry, participants, amounts/shares, entry states, creation timestamps and audit links. No usernames, contact lists, bank data, or normal private messages. Users choose what they put in expense descriptions. The database, backups and operator access must be protected separately; Telegram bots are not an end-to-end encrypted financial vault.
 
 Run cleanup daily using your scheduler:
 

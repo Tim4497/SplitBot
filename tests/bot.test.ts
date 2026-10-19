@@ -62,30 +62,37 @@ describe.skipIf(!process.env.DATABASE_URL)("Telegram event integration", () => {
       }),
     ).toBe(0);
   });
-  it("handles inline setup, mutual approval, expense confirmation and private balance", async () => {
+  it("handles inline setup, creator booking and private balance", async () => {
     const chat = prefix + "chat",
       message = prefix + "setup";
-    const setup = (await inline("einrichten")).results[0].id;
+    const setupResult = (await inline("einrichten")).results[0],
+      setup = setupResult.id;
+    expect(JSON.stringify(setupResult)).not.toMatch(/datenschutz|privacy/i);
     await click(`bind:${setup}`, chat, message);
     await click(`join:${setup}`, chat, message, max);
-    const candidate = (
-      await db.expenseDraft.findUniqueOrThrow({ where: { id: setup } })
-    ).candidateId!;
-    await click(`approve:${setup}:${candidate}`, chat, message);
+    expect(
+      (await db.expenseDraft.findUniqueOrThrow({ where: { id: setup } }))
+        .status,
+    ).toBe("CONFIRMED");
     const expense = (await inline("40 Abendessen")).results[0].id;
     const em = prefix + "expense";
     await click(`bind:${expense}`, chat, em);
-    await click(`saldo:${expense}`, chat, em, max);
     expect(
-      sent
-        .filter((x) => x.method === "editMessageReplyMarkup")
-        .at(-1)!
-        .payload.reply_markup.inline_keyboard.flat()
-        .some((b: any) => b.callback_data === `confirm:${expense}`),
-    ).toBe(true);
-    await click(`confirm:${expense}`, chat, em, max);
-    await click(`confirm:${expense}`, chat, em, max);
+      (await db.expenseDraft.findUniqueOrThrow({ where: { id: expense } }))
+        .status,
+    ).toBe("CONFIRMED");
     expect(await db.expense.count({ where: { draftId: expense } })).toBe(1);
+    const financialButtons = sent
+      .filter((x) => x.method === "editMessageReplyMarkup")
+      .flatMap((x) => x.payload.reply_markup.inline_keyboard.flat());
+    expect(
+      financialButtons.some((b: any) =>
+        /confirm:|privacy:/i.test(b.callback_data),
+      ),
+    ).toBe(false);
+    expect(financialButtons.map((b: any) => b.text)).not.toContain(
+      "Datenschutz",
+    );
     const status = (await inline("saldo")).results[0].id;
     await click(`bind:${status}`, chat, prefix + "status");
     const answer = await click(`saldo:${status}`, chat, prefix + "status", max);

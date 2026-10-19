@@ -126,16 +126,11 @@ export class LedgerService {
       });
     });
   }
-  async act(
-    who: Identity,
-    id: string,
-    action: string,
-    c: Binding,
-    expectedCandidate?: string,
-  ) {
-    if (!c.chat || !c.message) fail("Nur Inline-Nachrichten werden unterstützt.");
+  async act(who: Identity, id: string, action: string, c: Binding) {
+    if (!c.chat || !c.message)
+      fail("Nur Inline-Nachrichten werden unterstützt.");
     return this.tx(async (tx) => {
-      const d = await tx.expenseDraft.findUnique({ where: { id } });
+      let d = await tx.expenseDraft.findUnique({ where: { id } });
       if (!d) return fail("Nachricht nicht mehr verfügbar.");
       const u = await this.user(tx, who),
         owner = d.creatorId === u.id;
@@ -150,14 +145,14 @@ export class LedgerService {
       )
         fail("Entwurf abgelaufen. Bitte neu eingeben.");
       if (!d.chatInstance) {
-        if (!owner || action !== "bind") fail("Zuerst muss die erstellende Person den Chat bestätigen.");
+        if (!owner || action !== "bind")
+          fail("Zuerst muss die erstellende Person den Chat bestätigen.");
+        let ledgerId = d.ledgerId;
         if (d.kind !== "SETUP") {
           const { ledger } = await this.member(tx, who, c.chat);
-          if (d.ledgerId && d.ledgerId !== ledger.id) fail("Falsche Abrechnung.");
-          await tx.expenseDraft.update({
-            where: { id },
-            data: { ledgerId: ledger.id },
-          });
+          if (d.ledgerId && d.ledgerId !== ledger.id)
+            fail("Falsche Abrechnung.");
+          ledgerId = ledger.id;
         } else {
           const exists = await tx.ledger.findUnique({
             where: { chatInstance: c.chat },
@@ -167,55 +162,68 @@ export class LedgerService {
             fail("Abrechnung existiert bereits. „saldo“ verwenden.");
           }
         }
-        return tx.expenseDraft.update({
+        d = await tx.expenseDraft.update({
           where: { id },
           data: {
+            ledgerId,
             chatInstance: c.chat,
             inlineMessageId: c.message,
-            creatorApproved: true,
           },
         });
+        if (d.kind === "SETUP" || d.kind === "STATUS") return d;
       }
       if (d.kind === "SETUP" && d.status !== "CONFIRMED") {
         if (action === "bind" && owner) return d;
         if (action === "join" && !owner) {
-          if (d.candidateId && d.candidateId !== u.id) fail("Eine andere Person wartet bereits auf Bestätigung.");
+          if (d.creatorId === u.id)
+            fail("Die erstellende Person kann nicht selbst beitreten.");
+          const exists = await tx.ledger.findUnique({
+            where: { chatInstance: c.chat },
+          });
+          if (exists) {
+            await this.member(tx, who, c.chat);
+            fail("Abrechnung existiert bereits. „saldo“ verwenden.");
+          }
+          const ledger = await tx.ledger.create({
+            data: {
+              chatInstance: c.chat,
+              participantA: d.creatorId,
+              participantB: u.id,
+            },
+          });
+          await tx.ledgerEvent.create({
+            data: {
+              ledgerId: ledger.id,
+              actorId: u.id,
+              kind: "SETUP",
+              draftId: d.id,
+            },
+          });
           return tx.expenseDraft.update({
             where: { id },
-            data: { candidateId: u.id },
+            data: {
+              candidateId: null,
+              ledgerId: ledger.id,
+              status: "CONFIRMED",
+            },
           });
         }
-        if (action === "reject" && owner)
-          return tx.expenseDraft.update({
-            where: { id },
-            data: { candidateId: null },
-          });
-        if (action !== "approve" || !owner || !d.candidateId) return fail("Keine Berechtigung für diese Aktion.");
-        if (expectedCandidate !== d.candidateId) return fail("Teilnehmer geändert. Bitte Nachricht aktualisieren.");
-        const l = await tx.ledger.create({
-          data: {
-            chatInstance: c.chat,
-            participantA: u.id,
-            participantB: d.candidateId,
-          },
-        });
-        await tx.ledgerEvent.create({
-          data: { ledgerId: l.id, actorId: u.id, kind: "SETUP", draftId: d.id },
-        });
-        return tx.expenseDraft.update({
-          where: { id },
-          data: { ledgerId: l.id, status: "CONFIRMED" },
-        });
+        return fail("Keine Berechtigung für diese Aktion.");
       }
       const { ledger, uid } = await this.member(tx, who, c.chat);
       if (d.ledgerId !== ledger.id) fail("Falsche Abrechnung.");
       if (d.status === "CONFIRMED") return d; // Membership and immutable binding checked BEFORE idempotent return.
-      if ((action === "bind" && owner) || action === "view") return d;
-      // Allow the creator to finalize drafts without the other party's explicit confirmation.
-      if (action !== "confirm" || !d.creatorApproved || d.kind === "STATUS")
-        fail("Die andere Person muss bestätigen.");
-      if (![ledger.participantA, ledger.participantB].includes(d.creatorId)) fail("Ungültiger Zahler.");
-      const payerIsA = d.creatorId === ledger.participantA;
+      if (
+        (action === "bind" && owner && d.kind === "STATUS") ||
+        action === "view"
+      )
+        return d;
+      if (action !== "bind" || !owner)
+        fail("Nur die erstellende Person kann buchen.");
+      if (![ledger.participantA, ledger.participantB].includes(d.creatorId))
+        fail("Ungültiger Zahler.");
+      const payerIsA = d.creatorId === ledger.participantA,
+        peerId = payerIsA ? ledger.participantB : ledger.participantA;
       if (d.kind === "REVERSAL") {
         const target = await tx.ledgerEvent.findUnique({
           where: { id: d.targetEventId! },
@@ -239,17 +247,22 @@ export class LedgerService {
           },
         });
       } else {
-        if (d.kind !== "EXPENSE" && d.kind !== "SETTLEMENT") fail("Ungültige Aktion.");
+        const kind: "EXPENSE" | "SETTLEMENT" =
+          d.kind === "EXPENSE"
+            ? d.kind
+            : d.kind === "SETTLEMENT"
+              ? d.kind
+              : fail("Ungültige Aktion.");
         const amount = d.amount!;
-        const change = delta(d.kind, amount, payerIsA);
+        const change = delta(kind, amount, payerIsA);
         const event = {
           ledgerId: ledger.id,
           actorId: uid,
-          kind: d.kind,
+          kind,
           deltaCents: change,
           draftId: d.id,
         };
-        if (d.kind === "EXPENSE") {
+        if (kind === "EXPENSE") {
           const [shareA, shareB] = split(amount, payerIsA);
           const expense = await tx.expense.create({
             data: {
@@ -268,16 +281,15 @@ export class LedgerService {
         } else {
           const bal = await this.sum(tx, ledger.id);
           const debt = payerIsA ? -bal : bal;
-          if (debt <= 0n || BigInt(amount) > debt) fail(
-            "Zahlung übersteigt die aktuelle Schuld oder hat die falsche Richtung.",
-          );
-          // Determine the recipient: use the other participant of the ledger, not necessarily the confirmer.
-          const recipientId = d.creatorId === ledger.participantA ? ledger.participantB : ledger.participantA;
+          if (debt <= 0n || BigInt(amount) > debt)
+            fail(
+              "Zahlung übersteigt die aktuelle Schuld oder hat die falsche Richtung.",
+            );
           const settlement = await tx.settlement.create({
             data: {
               ledgerId: ledger.id,
               payerId: d.creatorId,
-              recipientId,
+              recipientId: peerId,
               amount,
               draftId: d.id,
             },
@@ -299,7 +311,8 @@ export class LedgerService {
         where: { id },
         include: { creator: true },
       });
-      if (!d || d.chatInstance !== c.chat || d.inlineMessageId !== c.message) return fail("Ungültige Nachricht.");
+      if (!d || d.chatInstance !== c.chat || d.inlineMessageId !== c.message)
+        return fail("Ungültige Nachricht.");
       if (d.kind === "SETUP" && d.status === "OPEN") {
         const candidate = d.candidateId
           ? await tx.user.findUnique({ where: { id: d.candidateId } })

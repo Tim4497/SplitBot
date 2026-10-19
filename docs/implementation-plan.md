@@ -7,11 +7,11 @@ Spec: design.md and user attachment.
 
 ## Constraints
 
-EUR only; integer cents; exactly two consenting identities per immutable chat binding; no private-message reading; financial data in callback alerts. No bot credentials embedded. New isolated repository.
+EUR only; integer cents; exactly two identities per immutable chat binding; no private-message reading; financial data in callback alerts. The creator finalizes entries directly and the second participant activates setup. No bot credentials embedded. New isolated repository.
 
 ## Review focus
 
-Concurrent confirmation; forged callback IDs; reused drafts across chats; unknown chat types; expired/reversed drafts and pending settlement races.
+Concurrent booking retries; forged callback IDs; reused drafts across chats; unknown chat types; expired/reversed drafts and pending settlement races.
 
 ## Tasks
 

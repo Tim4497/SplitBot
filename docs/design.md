@@ -6,11 +6,11 @@ Implements the supplied 2026-10-18 specification: permanent EUR ledgers for two 
 
 Inline queries have no chat ID or peer identity. Require `chat_type=private`; reject missing type, groups, channels and sender chats. This is a filter, not proof of callback chat type. Every draft/status/setup gets an unguessable identifier. Only its creator can bind its first callback to `(chat_instance, inline_message_id)`. Both are immutable thereafter. Chosen-result feedback is optional and only pins message identity. Never infer chat IDs from opaque values.
 
-Setup: creator binds invitation, another real Telegram user opts in, creator explicitly approves that named user and numeric ID. Only then insert a ledger with a unique chat_instance. An unrelated first joiner cannot activate it without the creator's approval; creator can reject candidate. Two participants are immutable. A zero balance never closes the ledger.
+Setup: creator binds the invitation; the first other Telegram user to tap **Beitreten** immediately creates the ledger. Telegram does not verify that this user is the intended peer or a member of a private 1:1 chat. The two participants are immutable. A zero balance never closes the ledger.
 
-Drafts require explicit creator consent in a bound message and peer confirmation, both against the same ledger. Settlement creator is payer; peer is recipient. Positive integer cents, payer absorbs odd cent. Confirmed history determines net balance. Partial settlement allowed; reject wrong payer and overpayment at final commit. Reversal requires both members and an auditable reversal event; no silent deletion.
+The creator's **Bestätigen** action binds and immediately finalizes an expense, settlement, or reversal in one transaction. Settlement creator is payer; the other member is recipient. Positive integer cents, payer absorbs odd cent. Confirmed history determines net balance. Partial settlement allowed; reject wrong payer and overpayment at final commit. Reversal remains auditable; no silent deletion.
 
-Callbacks cannot prove private-chat membership or forwarding provenance. Return financial balance/history in caller-only callback alerts, not shared message edits. Original draft text is intentionally shared and may be forwarded by recipients. Never claim prevention of screenshots, forwards, malicious participant disclosure, or independently verified private-chat membership. Restrict each ledger to two explicitly consenting identities even if they misuse a group.
+Callbacks cannot prove private-chat membership or forwarding provenance. Return financial balance/history in caller-only callback alerts, not shared message edits. Original draft text is intentionally shared and may be forwarded by recipients. Never claim prevention of screenshots, forwards, malicious participant disclosure, or independently verified private-chat membership. Inline queries still reject non-private and unknown chat types.
 
 ## Architecture
 
