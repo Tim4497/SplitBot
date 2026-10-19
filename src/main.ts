@@ -1,10 +1,10 @@
+import { createDatabase } from "./database.js";
 import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
 import { createBot } from "./bot.js";
 import { config } from "./config.js";
 import { webhookServer } from "./webhook.js";
 const cfg = config(),
-  db = new PrismaClient(),
+  db = createDatabase(),
   bot = createBot(cfg.token, db);
 const updates = [
   "inline_query",

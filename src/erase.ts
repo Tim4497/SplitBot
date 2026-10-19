@@ -1,5 +1,5 @@
+import { createDatabase } from "./database.js";
 import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
 // Operator-only workflow. Never expose this as an unauthenticated HTTP endpoint.
 const telegramId = process.argv[2],
   confirmed = process.argv[3] === "--confirm-shared-ledger-deletion";
@@ -7,7 +7,7 @@ if (!telegramId || !/^\d+$/.test(telegramId))
   throw new Error(
     "Usage: npm run db:erase -- TELEGRAM_ID [--confirm-shared-ledger-deletion]",
   );
-const db = new PrismaClient();
+const db = createDatabase();
 try {
   const result = await db.$transaction(
     async (tx) => {

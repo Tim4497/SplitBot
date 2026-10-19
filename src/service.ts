@@ -3,7 +3,7 @@ import {
   PrismaClient,
   type DraftKind,
   type Ledger,
-} from "@prisma/client";
+} from "./generated/prisma/client.js";
 import { delta, split, MAX_CENTS } from "./money.js";
 export class DomainError extends Error {}
 export type Identity = { id: number; first_name: string; last_name?: string };

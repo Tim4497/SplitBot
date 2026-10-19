@@ -4,7 +4,10 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
     services:
       postgres:
         image: postgres:16
@@ -25,8 +28,21 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run audit
       - run: npm run db:generate
       - run: npm run db:migrate
       - run: npm run build
       - run: npm test
       - run: docker build -t splitbot:ci .
+      - name: Check production dependency audit
+        run: docker run --rm splitbot:ci npm audit --omit=dev
+      - name: Verify migrations and database access inside the runtime image
+        run: |
+          docker run --rm --network host -e DATABASE_URL splitbot:ci npm run db:migrate
+          docker run --rm --network host -e DATABASE_URL splitbot:ci node --input-type=module -e 'import { createDatabase } from "./dist/database.js"; const db = createDatabase(); try { await db.$queryRawUnsafe("SELECT 1"); } finally { await db.$disconnect(); }'
+      - name: Check Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci_password
+        run: |
+          cp .env.example .env
+          docker compose config --quiet

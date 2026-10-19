@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",
@@ -16,20 +16,24 @@
     "db:migrate": "prisma migrate deploy",
     "db:cleanup": "tsx src/cleanup.ts",
     "db:erase": "tsx src/erase.ts",
-    "format": "prettier --write src tests docs README.md package.json tsconfig.json compose.yaml .github/workflows/ci.yml",
-    "format:check": "prettier --check src tests docs README.md package.json tsconfig.json compose.yaml .github/workflows/ci.yml"
+    "format": "prettier --write src tests docs README.md package.json tsconfig.json compose.yaml .github/workflows/ci.yml prisma.config.ts",
+    "format:check": "prettier --check src tests docs README.md package.json tsconfig.json compose.yaml .github/workflows/ci.yml prisma.config.ts",
+    "audit": "npm audit && npm audit --omit=dev"
   },
   "dependencies": {
-    "@prisma/client": "6.19.0",
-    "dotenv": "16.6.1",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "dotenv": "18.0.8",
     "grammy": "1.46.0",
-    "prisma": "6.19.0"
+    "pg": "8.23.1",
+    "prisma": "7.10.1"
   },
   "devDependencies": {
-    "@types/node": "22.19.1",
-    "prettier": "3.6.2",
-    "tsx": "4.20.6",
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
-    "vitest": "3.2.4"
+    "vitest": "4.1.12"
   }
 }

@@ -14,7 +14,7 @@ Callbacks cannot prove private-chat membership or forwarding provenance. Return 
 
 ## Architecture
 
-`money.ts`: parsing, splits and integer formatting. `service.ts`: transactional authorization and state machine. `bot.ts`: Telegram adapter and German UI. `main.ts`: polling or authenticated webhook server. Prisma/PostgreSQL stores users, ledgers, drafts, expenses, settlements and append-only events. Serializable transactions retry conflicts; unique source draft IDs prevent double booking. Read responses regenerated on retries, so failed Telegram delivery never rolls back a committed booking.
+`money.ts`: parsing, splits and integer formatting. `service.ts`: transactional authorization and state machine. `bot.ts`: Telegram adapter and German UI. `main.ts`: polling or authenticated webhook server. Prisma 7 with the PostgreSQL driver adapter stores users, ledgers, drafts, expenses, settlements and append-only events. Serializable transactions retry conflicts; unique source draft IDs prevent double booking. Read responses regenerated on retries, so failed Telegram delivery never rolls back a committed booking.
 
 ## Operations
 

@@ -1,9 +1,9 @@
-import { PrismaClient } from "@prisma/client";
+import { createDatabase } from "../src/database.js";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { LedgerService, DomainError } from "../src/service.js";
 import { cleanup } from "../src/maintenance.js";
 import { randomUUID } from "node:crypto";
-const db = new PrismaClient();
+const db = createDatabase();
 const svc = new LedgerService(db);
 const prefix = randomUUID();
 const anna = { id: 101, first_name: "Anna" },

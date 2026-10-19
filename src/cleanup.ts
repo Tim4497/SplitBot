@@ -1,7 +1,7 @@
+import { createDatabase } from "./database.js";
 import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
 import { cleanup } from "./maintenance.js";
-const db = new PrismaClient();
+const db = createDatabase();
 try {
   await cleanup(db);
   console.info("cleanup_complete");

@@ -1,7 +1,7 @@
 import { rateLimit } from "./rate-limit.js";
 import { Bot, InlineKeyboard, GrammyError } from "grammy";
 import type { UserFromGetMe, InlineQueryResultArticle } from "grammy/types";
-import { PrismaClient, type ExpenseDraft } from "@prisma/client";
+import { PrismaClient, type ExpenseDraft } from "./generated/prisma/client.js";
 import {
   DomainError,
   LedgerService,

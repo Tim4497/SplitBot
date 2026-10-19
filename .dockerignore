@@ -6,3 +6,5 @@ node_modules
 dist
 coverage
 .superpowers
+
+src/generated

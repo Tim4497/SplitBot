@@ -2,7 +2,7 @@
 
 Goal: executable Telegram inline shared-expense MVP.
 Architecture: pure accounting plus PostgreSQL transaction service plus grammY adapter.
-Tech Stack: Node 22+, TypeScript, grammY, Prisma 6, PostgreSQL 16, Vitest, Docker.
+Tech Stack: Node 22+, TypeScript, grammY, Prisma 7, PostgreSQL 16, Vitest, Docker.
 Spec: design.md and user attachment.
 
 ## Constraints
@@ -21,6 +21,6 @@ Concurrent confirmation; forged callback IDs; reused drafts across chats; unknow
 - [x] Adapter: simulate actual inline/chosen/callback updates through grammY, assert persistence and private responses; implement setup, draft confirmation, status and paginated history.
 - [x] Operations: polling, authenticated webhook, Compose, migration, privacy cleanup and erasure; README and CI.
 - [x] Verify build and complete suite; review authorization and arithmetic.
-- [ ] Publish repository: blocked because the GitHub connector lacks repository creation; browser fallback awaits user approval.
+- [x] Publish implementation to the user-provided private repository `Tim4497/SplitBot` on `main`. GitHub Actions runs the PostgreSQL 16 tests and Docker build.
 
 Execution: inline. Direct user implementation request authorizes the work; no additional design approval round.

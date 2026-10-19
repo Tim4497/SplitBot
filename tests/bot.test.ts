@@ -1,8 +1,8 @@
-import { PrismaClient } from "@prisma/client";
+import { createDatabase } from "../src/database.js";
 import { describe, it, expect, afterAll } from "vitest";
 import { createBot } from "../src/bot.js";
 import { randomUUID } from "node:crypto";
-const db = new PrismaClient();
+const db = createDatabase();
 const prefix = randomUUID();
 let sequence = 1000;
 const anna = { id: 201, first_name: "Anna", is_bot: false },

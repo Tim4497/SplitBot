@@ -44,15 +44,63 @@ Official references checked 2026-10-18:
 
 ## 2. Run with Docker Compose
 
-Requirements: Docker Engine with Compose v2. No Telegram token is bundled.
+Requirements: Docker Engine, a current Docker Compose release (v2 or newer), and the **Buildx plugin**. No Telegram token is bundled.
+
+Check the installed command spelling first:
 
 ```sh
-cp .env.example .env
+docker version
+docker compose version
+# If the command above is unavailable, check the standalone executable:
+docker-compose version
+docker buildx version
+```
+
+`docker compose` is the Docker CLI plugin form. Some installations expose modern Compose as `docker-compose`; use that spelling if it is the one installed on your server. A hyphen alone does not mean it is obsolete. The old Python Compose v1 is unsupported.
+
+On Ubuntu using **Docker's official apt repository**, install the missing plugins:
+
+```sh
+sudo apt-get update
+sudo apt-get install docker-buildx-plugin docker-compose-plugin
+docker compose version
+docker buildx version
+```
+
+If apt cannot find those packages, configure the [official Docker Ubuntu repository](https://docs.docker.com/engine/install/ubuntu/#install-using-the-apt-repository) first, or use the matching packages from your existing Docker distribution. Do not mix Docker CE and distribution packages blindly or remove an existing engine just to change the command spelling. [Compose installation reference](https://docs.docker.com/compose/install/linux/).
+
+The warning `Docker Compose requires buildx plugin to be installed` refers to the **host's build tool**, not a missing package inside the bot container. The classic builder can still complete the build, as in your log, but installing Buildx resolves the prerequisite.
+
+```sh
+# First installation only: preserve an existing .env when updating.
+cp -n .env.example .env
 # Edit BOT_TOKEN and POSTGRES_PASSWORD in .env.
 # Use a long URL-safe database password (hex is convenient).
 docker compose up --build -d
 docker compose logs --tail=30 bot
 ```
+
+For a server where the installed command is `docker-compose`, the equivalent commands are:
+
+```sh
+docker-compose up --build -d
+docker-compose ps
+docker-compose logs --tail=30 bot
+```
+
+Use that spelling for **all** remaining Compose commands in this document when necessary.
+
+To update an existing installation without resetting its database or replacing its secrets:
+
+```sh
+git pull --ff-only
+docker-compose build --pull bot
+docker-compose up -d
+docker-compose ps
+docker-compose logs --tail=30 bot
+```
+
+Use `docker compose` instead if you installed the CLI plugin. `build --pull` refreshes the base image; it does not change the PostgreSQL major version or remove its volume. A container reported as “Started” still needs its startup logs checked for successful migrations and `polling_ready`/`webhook_ready`.
 
 The app runs as the non-root `node` user. Startup applies committed migrations before starting the bot. PostgreSQL data lives in the `postgres_data` volume. `docker compose down` preserves it; **do not use `down -v`** unless intentionally deleting the database. PostgreSQL and app ports bind only to loopback.
 
@@ -94,7 +142,7 @@ Returning to `BOT_MODE=polling` deletes the webhook without dropping pending upd
 
 ## Local development and tests
 
-Use Node.js 22 or newer and a **dedicated disposable test database**.
+Use Node.js 22.12 or newer and a **dedicated disposable test database**.
 
 ```sh
 npm ci
@@ -114,6 +162,14 @@ npm test
 `npm test` does not load `.env`; it uses the shell's `DATABASE_URL`. Database tests are explicitly skipped when that variable is absent. `npm run test:unit` runs the pure accounting tests. GitHub Actions supplies PostgreSQL 16, applies migrations, runs all tests and builds the Docker image.
 
 Tests exercise the requested eight acceptance cases plus first-actor binding, peer-only confirmation, forwarded identifiers, third-party setup attempts, duplicate query IDs, concurrent confirmation, overpayment, partial payment, expiration, reversal, actual grammY event dispatch, unknown/group queries and webhook authentication.
+
+## Dependency and build warnings
+
+Dependencies are pinned in `package-lock.json`. Prisma CLI, generated client and PostgreSQL adapter are upgraded together to the patched stable 7.x line; Prisma 8 release candidates are deliberately excluded. Prisma 7 uses `prisma.config.ts` for the CLI connection URL and a `pg` adapter at runtime. The existing SQL migration and data volume are unchanged; no reset is needed.
+
+CI runs both `npm audit` and `npm audit --omit=dev`, plus the PostgreSQL integration suite and Docker build. Do not run `npm audit fix --force` on the production server: major updates require regenerating the client and testing. Install the committed lockfile with `npm ci`.
+
+An npm “new major version available” notice is about the package-manager executable bundled with Node, not a failed application update. `debconf` messages about missing interactive frontends during an image build are also not failures. The Dockerfile uses noninteractive package configuration. Audit vulnerabilities, failed migrations and bot startup errors must still be addressed.
 
 ## Data handling and operations
 
