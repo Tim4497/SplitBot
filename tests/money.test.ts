@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseQuery, split, euro, delta } from "../src/money.js";
+import {
+  parseQuery,
+  split,
+  splitByPercent,
+  euro,
+  delta,
+} from "../src/money.js";
 describe("money", () => {
   it.each(["12,50 Essen", "12.50 Essen", "12,50€ Essen", "12.50 EUR Essen"])(
     "%s",
@@ -33,6 +39,12 @@ describe("money", () => {
     expect(split(1001, true)).toEqual([501, 500]);
     expect(split(1001, false)).toEqual([500, 501]);
     expect(split(1, true)).toEqual([1, 0]);
+  });
+  it("splits expenses by payer percentage with exact cents", () => {
+    expect(splitByPercent(10_001, true, 70)).toEqual([7_001, 3_000]);
+    expect(splitByPercent(10_001, false, 70)).toEqual([3_000, 7_001]);
+    expect(splitByPercent(100, true, 0)).toEqual([0, 100]);
+    expect(splitByPercent(100, true, 100)).toEqual([100, 0]);
   });
   it("runs the full permanent-ledger example with exact signed cents", () => {
     let b = delta("EXPENSE", 4000, true);

@@ -34,6 +34,8 @@ model User {
   payments    Settlement[]   @relation("Payer")
   receipts    Settlement[]   @relation("Recipient")
   events      LedgerEvent[]
+  createdAppInvites MiniAppInvite[] @relation("AppInviteCreator")
+  joinedAppInvites  MiniAppInvite[] @relation("AppInviteJoiner")
 }
 
 model Ledger {
@@ -50,6 +52,7 @@ model Ledger {
   expenses     Expense[]
   settlements  Settlement[]
   events       LedgerEvent[]
+  appInvites   MiniAppInvite[]
 
   @@index([participantA])
   @@index([participantB])
@@ -91,6 +94,7 @@ model Expense {
   amount      Int
   shareA      Int
   shareB      Int
+  splitPercentA Int?
   description String
   status      String       @default("CONFIRMED")
   createdAt   DateTime     @default(now())
@@ -99,6 +103,21 @@ model Expense {
   event       LedgerEvent?
 
   @@index([ledgerId, createdAt])
+}
+
+model MiniAppInvite {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  creatorId String
+  creator   User     @relation("AppInviteCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  joinedById String?
+  joinedBy   User?    @relation("AppInviteJoiner", fields: [joinedById], references: [id], onDelete: SetNull)
+  ledgerId  String?
+  ledger    Ledger?  @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([creatorId, expiresAt])
 }
 
 model Settlement {

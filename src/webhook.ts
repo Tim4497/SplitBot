@@ -1,7 +1,13 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import type { Bot } from "grammy";
+import { URL } from "node:url";
 const hash = (s: string) => createHash("sha256").update(s).digest();
+type AppHandler = (
+  req: import("node:http").IncomingMessage,
+  res: import("node:http").ServerResponse,
+  url: URL,
+) => Promise<boolean>;
 export function authorized(
   header: string | string[] | undefined,
   secret: string,
@@ -12,18 +18,30 @@ export function authorized(
 }
 export function webhookServer(
   bot: Bot,
-  secret: string,
-  path: string,
+  secret: string | undefined,
+  path: string | undefined,
   healthy: () => Promise<boolean>,
+  miniApp?: AppHandler,
 ) {
   return createServer(async (req, res) => {
+    let url: URL;
+    try {
+      url = new URL(
+        req.url ?? "/",
+        `http://${req.headers.host ?? "localhost"}`,
+      );
+    } catch {
+      res.writeHead(400).end();
+      return;
+    }
+    if (miniApp && (await miniApp(req, res, url))) return;
     if (req.method === "GET" && req.url === "/healthz") {
       const ok = await healthy().catch(() => false);
       res.writeHead(ok ? 200 : 503);
       res.end(ok ? "ok" : "unavailable");
       return;
     }
-    if (req.method !== "POST" || req.url !== path) {
+    if (!secret || !path || req.method !== "POST" || req.url !== path) {
       res.writeHead(404).end();
       return;
     }

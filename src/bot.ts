@@ -27,6 +27,12 @@ function preview(d: ExpenseDraft, name: string) {
   const [payer, other] = split(d.amount!, true);
   return `${d.description} · ${euro(d.amount!)} · ${name}\n50/50: ${euro(payer)} / ${euro(other)}`;
 }
+function recordedMessage(d: ExpenseDraft, name: string) {
+  if (d.kind === "SETTLEMENT")
+    return `${name} recorded a repayment of ${euro(d.amount!)}`;
+  if (d.kind === "REVERSAL") return `${name} reversed "${d.description}"`;
+  return `${name} added "${euro(d.amount!)} for ${d.description}"`;
+}
 export function createBot(
   token: string,
   db: PrismaClient,
@@ -179,7 +185,15 @@ export function createBot(
         answer = "Chat verknüpft.";
       } else if (s.draft.status === "CONFIRMED") {
         answer = s.draft.kind === "SETUP" ? "Eingerichtet." : "Verbucht.";
-        kb = menu(id);
+        if (["EXPENSE", "SETTLEMENT", "REVERSAL"].includes(s.draft.kind)) {
+          editedText = recordedMessage(
+            s.draft,
+            safeName(s.draft.creator.displayName),
+          );
+          kb = new InlineKeyboard();
+        } else {
+          kb = menu(id);
+        }
       } else {
         answer = "Chat verknüpft.";
         kb = menu(id);

@@ -5,6 +5,7 @@ export type Config = {
   port: number;
   webhookUrl?: string;
   webhookSecret?: string;
+  webAppUrl?: string;
 };
 export function config(env: NodeJS.ProcessEnv = process.env): Config {
   const token = env.BOT_TOKEN,
@@ -29,6 +30,18 @@ export function config(env: NodeJS.ProcessEnv = process.env): Config {
     if (!/^[A-Za-z0-9_-]{32,256}$/.test(env.WEBHOOK_SECRET ?? ""))
       throw new Error("WEBHOOK_SECRET needs 32–256 URL-safe characters.");
   }
+  if (env.WEB_APP_URL) {
+    const appUrl = new URL(env.WEB_APP_URL);
+    if (
+      appUrl.protocol !== "https:" ||
+      appUrl.pathname !== "/" ||
+      appUrl.search ||
+      appUrl.hash
+    )
+      throw new Error(
+        "WEB_APP_URL must be a root HTTPS URL without query or fragment.",
+      );
+  }
   return {
     token,
     databaseUrl,
@@ -36,5 +49,6 @@ export function config(env: NodeJS.ProcessEnv = process.env): Config {
     port,
     webhookUrl: env.WEBHOOK_URL,
     webhookSecret: env.WEBHOOK_SECRET,
+    webAppUrl: env.WEB_APP_URL,
   };
 }

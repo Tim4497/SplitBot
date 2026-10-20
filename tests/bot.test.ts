@@ -82,6 +82,18 @@ describe.skipIf(!process.env.DATABASE_URL)("Telegram event integration", () => {
         .status,
     ).toBe("CONFIRMED");
     expect(await db.expense.count({ where: { draftId: expense } })).toBe(1);
+    const savedExpense = sent
+      .filter((x) => x.method === "editMessageText")
+      .at(-1)!.payload;
+    expect(savedExpense.text).toBe('Anna added "40,00 € for Abendessen"');
+    expect(savedExpense.reply_markup.inline_keyboard).toEqual([]);
+    const repayment = (await inline("ausgleich 5", max)).results[0].id;
+    await click(`bind:${repayment}`, chat, prefix + "repayment", max);
+    const savedRepayment = sent
+      .filter((x) => x.method === "editMessageText")
+      .at(-1)!.payload;
+    expect(savedRepayment.text).toBe("Max recorded a repayment of 5,00 €");
+    expect(savedRepayment.reply_markup.inline_keyboard).toEqual([]);
     const financialButtons = sent
       .filter((x) => x.method === "editMessageReplyMarkup")
       .flatMap((x) => x.payload.reply_markup.inline_keyboard.flat());
@@ -97,7 +109,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Telegram event integration", () => {
     await click(`bind:${status}`, chat, prefix + "status");
     const answer = await click(`saldo:${status}`, chat, prefix + "status", max);
     expect(answer.show_alert).toBe(true);
-    expect(answer.text).toContain("Max schuldet Anna 20,00 €");
+    expect(answer.text).toContain("Max schuldet Anna 15,00 €");
     const outsider = await click(`saldo:${status}`, chat, prefix + "status", {
       ...max,
       id: 203,

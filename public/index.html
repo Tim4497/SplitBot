@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f4f6f8" />
+    <title>Ledger</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <div class="brand">Ledger</div>
+      <div id="user-name" class="muted"></div>
+    </header>
+    <main id="app">
+      <p class="muted">Loading your ledger…</p>
+    </main>
+    <div id="notice" role="status" aria-live="polite"></div>
+  </body>
+</html>

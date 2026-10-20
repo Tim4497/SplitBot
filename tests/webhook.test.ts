@@ -24,6 +24,21 @@ describe("webhook security", () => {
       }).mode,
     ).toBe("webhook");
   });
+  it("requires the Mini App to be served from its HTTPS origin root", () => {
+    const base = {
+      BOT_TOKEN: "123:abc",
+      DATABASE_URL: "postgresql://localhost/db",
+    };
+    expect(
+      config({ ...base, WEB_APP_URL: "https://example.test/" }).webAppUrl,
+    ).toBe("https://example.test/");
+    expect(() =>
+      config({ ...base, WEB_APP_URL: "http://example.test/" }),
+    ).toThrow();
+    expect(() =>
+      config({ ...base, WEB_APP_URL: "https://example.test/app" }),
+    ).toThrow();
+  });
   it("rejects missing, array and incorrect authentication headers", () => {
     expect(authorized(undefined, "secret")).toBe(false);
     expect(authorized(["secret"], "secret")).toBe(false);

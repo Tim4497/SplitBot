@@ -34,6 +34,25 @@ export function split(amount: number, payerIsA: boolean): [number, number] {
   const other = Math.floor(amount / 2);
   return payerIsA ? [amount - other, other] : [other, amount - other];
 }
+export function splitByPercent(
+  amount: number,
+  payerIsA: boolean,
+  payerSharePercent: number,
+): [number, number] {
+  if (
+    !Number.isSafeInteger(payerSharePercent) ||
+    payerSharePercent < 0 ||
+    payerSharePercent > 100 ||
+    !Number.isSafeInteger(amount) ||
+    amount <= 0 ||
+    amount > MAX_CENTS
+  )
+    throw new Error("Ungültige Aufteilung.");
+  const payerShare = Math.round((amount * payerSharePercent) / 100);
+  return payerIsA
+    ? [payerShare, amount - payerShare]
+    : [amount - payerShare, payerShare];
+}
 /** Positive = B owes A. BigInt avoids cumulative Number precision loss. */
 export function delta(
   kind: MoneyKind,

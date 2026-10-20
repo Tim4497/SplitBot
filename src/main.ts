@@ -3,6 +3,7 @@ import "dotenv/config";
 import { createBot } from "./bot.js";
 import { config } from "./config.js";
 import { webhookServer } from "./webhook.js";
+import { miniAppHandler } from "./miniapp.js";
 const cfg = config(),
   db = createDatabase(),
   bot = createBot(cfg.token, db);
@@ -13,6 +14,15 @@ const updates = [
 ] as const;
 await db.$connect();
 await bot.init();
+if (cfg.webAppUrl) {
+  await bot.api.setChatMenuButton({
+    menu_button: {
+      type: "web_app",
+      text: "Ledger",
+      web_app: { url: cfg.webAppUrl },
+    },
+  });
+}
 let server: ReturnType<typeof webhookServer> | undefined;
 let stopping = false;
 async function shutdown() {
@@ -24,28 +34,41 @@ async function shutdown() {
 }
 process.once("SIGTERM", () => void shutdown());
 process.once("SIGINT", () => void shutdown());
-if (cfg.mode === "webhook") {
-  const url = new URL(cfg.webhookUrl!);
-  if (url.search || url.hash || url.pathname === "/healthz")
+if (cfg.mode === "webhook" || cfg.webAppUrl) {
+  const url = cfg.mode === "webhook" ? new URL(cfg.webhookUrl!) : undefined;
+  if (url && (url.search || url.hash || url.pathname === "/healthz"))
     throw new Error(
       "WEBHOOK_URL must have a dedicated path without query or fragment.",
     );
-  server = webhookServer(bot, cfg.webhookSecret!, url.pathname, async () => {
-    await db.$queryRaw`SELECT 1`;
-    return true;
-  });
+  server = webhookServer(
+    bot,
+    cfg.webhookSecret,
+    url?.pathname,
+    async () => {
+      await db.$queryRaw`SELECT 1`;
+      return true;
+    },
+    cfg.webAppUrl ? miniAppHandler(db, cfg.token) : undefined,
+  );
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
   await new Promise<void>((resolve, reject) => {
     server!.once("error", reject);
     server!.listen(cfg.port, "0.0.0.0", resolve);
   });
-  await bot.api.setWebhook(cfg.webhookUrl!, {
-    secret_token: cfg.webhookSecret!,
-    allowed_updates: [...updates],
-    drop_pending_updates: false,
-  });
-  console.info("webhook_ready");
+  if (url) {
+    await bot.api.setWebhook(cfg.webhookUrl!, {
+      secret_token: cfg.webhookSecret!,
+      allowed_updates: [...updates],
+      drop_pending_updates: false,
+    });
+    console.info("webhook_ready");
+  } else {
+    await bot.api.deleteWebhook({ drop_pending_updates: false });
+    bot.catch(() => console.error("polling_update_failed"));
+    console.info("polling_ready");
+    await bot.start({ allowed_updates: [...updates] });
+  }
 } else {
   await bot.api.deleteWebhook({ drop_pending_updates: false });
   bot.catch(() => console.error("polling_update_failed"));

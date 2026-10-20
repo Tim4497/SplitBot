@@ -1,12 +1,15 @@
 # SplitBot
 
-A Telegram inline expense ledger for two people in an existing private chat. German UI, EUR, 50/50 splitting, permanent history. The bot never reads ordinary chat messages or transfers money.
+A simple Telegram ledger for two friends. The Mini App supports expenses with a percentage split, repayments, and immediate edit/delete. The existing inline bot is still available as an alternative. EUR only; no money is transferred.
 
 ## What works
 
 - One permanent ledger per callback `chat_instance`, even at zero balance.
-- Lightweight setup: creator links the chat, and the other person joins to activate it.
-- Creator-finalized expenses with exact integer-cent netting.
+- One-time setup: creator links the chat, and the other person joins to activate it.
+- Either participant can add an expense or repayment; only the person adding it taps to record it.
+- Recorded entries become one short message, with the draft button removed.
+- Mini App ledger: add expenses with a payer percentage, record repayments, edit or delete entries immediately.
+- Telegram-signed Mini App authentication and one-time invite codes to pair two users.
 - Partial/full settlements with commit-time debt validation.
 - Private balance alerts, paginated history including pending/expired/confirmed/reversed entries.
 - Creator-triggered cancellation using an inverse audit event; originals remain stored.
@@ -19,11 +22,11 @@ An inline query gives the querying user and optionally a chat type, **not the pe
 
 The implementation rejects inline queries whose `chat_type` is not `private`. However, callbacks on inline messages do not independently prove that the destination is a private 1:1 chat, identify its other member, or reliably identify forwarding. The first person other than the creator to tap **Beitreten** activates the ledger; the bot cannot verify their relationship to the creator or independently verify private-chat membership. Shared messages can be distributed or forwarded.
 
-Only the draft creator can first bind a draft. The creator's **Bestätigen** click immediately records an expense, payment, or reversal. Every later operation must match **both** stored identifiers. Every financial read/write checks ledger membership.
+Only the draft creator can first bind a draft. For a new expense or repayment, the person who added it taps **Bestätigen** once; the other participant does not confirm it. Telegram does not include the destination chat identity in an inline query or chosen-result update, so this callback is required to safely bind and save the entry to the correct chat ledger. Once recorded, the draft is replaced by a single short message (for example, `Tim added "10,00 € for Abendessen"`), and its button is removed. Every later operation must match **both** stored identifiers. Every financial read/write checks ledger membership.
 
 To reduce forwarded-message disclosure, balances and history are shown in **private callback alerts** (Telegram's 200-character limit), not edited into shared messages. History is one entry per page; long descriptions/names are abbreviated for display but kept in the database. A and B in history correspond to the setup creator and joining participant. The initial expense preview is intentionally shared; recipients can forward it, copy it, or take screenshots. Existing Telegram messages and recipient copies cannot be recalled by database erasure.
 
-Unknown chat types and secret chats are unsupported. No private conversation with the bot is required. The exact username `@SplitBot` may be unavailable: use the username BotFather assigns.
+Unknown chat types and secret chats are unsupported. Inline mode does not require a private conversation with the bot; the Mini App is opened from the bot's private-chat menu. The exact username `@SplitBot` may be unavailable: use the username BotFather assigns.
 
 Official references checked 2026-10-18:
 
@@ -41,6 +44,7 @@ Official references checked 2026-10-18:
 4. Run `/setinlinefeedback`, select the bot, and choose **100%**. Feedback is optional for correctness; callbacks also bind the message.
 5. Run `/setjoingroups` and disable group joining. This does **not** disable inline use in groups by itself; application filtering still applies.
 6. Keep privacy mode enabled. Configure the bot description/profile to identify the operator and a real privacy/deletion contact.
+7. To enable the Mini App, configure an HTTPS domain with BotFather using `/setdomain`. Set `WEB_APP_URL` in `.env` to the public app URL on that domain. At startup, the bot installs a **Ledger** menu button in its private chat. Each person opens the bot chat and taps **Start** once to use that button.
 
 ## 2. Run with Docker Compose
 
@@ -106,16 +110,28 @@ The app runs as the non-root `node` user. Startup applies committed migrations b
 
 Compose overrides `DATABASE_URL` for its internal database hostname. The `.env.example` URL is for running Node directly on the host. Update that URL's password if you use local Node execution.
 
-## 3. Use it in an existing private chat
+The same HTTPS reverse proxy should forward `/` and `/api/` to port 3000 for the Mini App, plus `/telegram` when using webhook mode. With `WEB_APP_URL` omitted, the Mini App is disabled and the inline bot continues to work.
+
+## 3. Use the Mini App
+
+1. Each person opens the bot's private chat and taps **Start**, then opens **Ledger** from the chat menu.
+2. One person creates an invite code and shares it with the friend. The friend opens the app and enters that code once to join the same ledger.
+3. Either person can add an expense, choose who paid and enter the payer's share percentage. It is saved immediately.
+4. Record a repayment by choosing **Repayment** and entering who paid. Repayments must reduce the current debt.
+5. Either person can edit or delete an existing entry. Changes update the balance immediately; there is no per-entry approval step.
+
+The Mini App does not post into the existing 1:1 chat: Telegram does not give a bot access to send messages in a private conversation where it is not a participant. Both friends use the shared ledger inside the Mini App. For an existing inline ledger, either participant can create an invite from that ledger in the app so the other participant can access the same records there.
+
+## 4. Use it in an existing private chat
 
 Replace `@your_splitbot` with your own username.
 
 1. Anna types `@your_splitbot einrichten` and inserts the result.
 2. Anna taps **Bestätigen** to link the chat.
-3. Max taps **Beitreten**; the ledger is active immediately.
-4. Anna types `@your_splitbot 40€ Abendessen`, inserts the draft and taps **Bestätigen**. It is recorded immediately.
+3. Max taps **Beitreten** once; the ledger is active immediately.
+4. Anna types `@your_splitbot 40€ Abendessen`, inserts the result and taps **Bestätigen**. The other participant sees only `Anna added "40,00 € for Abendessen"` after it is recorded.
 5. Use `@your_splitbot saldo`, insert the result, and tap **Saldo**. Each participant sees the balance privately.
-6. Max records `@your_splitbot 16 Taxi` and taps **Bestätigen**. Balance: Max owes Anna EUR 12.
+6. Max records `@your_splitbot 16 Taxi` and taps **Bestätigen**. Balance: Max owes Anna EUR 12. Anna does not need to approve Max's entry.
 7. After Max pays Anna, he records `@your_splitbot ausgleich 12` and taps **Bestätigen**. Balance: zero; the ledger remains active.
 8. Weeks later Anna records `@your_splitbot 10 Kino`. Same ledger, Max owes EUR 5.
 
@@ -125,7 +141,7 @@ Only creator-confirmed entries affect balance. Setup activates when the second p
 
 For cancellation: open **Verlauf**, navigate to the entry, choose **Storno vorbereiten**, insert the resulting inline draft in the same chat, and tap **Bestätigen**. The original remains visible and the reversal cancels its signed contribution. Undoing an expense after a settlement can correctly create a debt in the opposite direction. Stale balances are snapshots; refresh to obtain the latest committed value.
 
-## 4. Production webhooks
+## 5. Production webhooks
 
 Use one deployment per bot token. Never run polling and webhook workers simultaneously. Configure an HTTPS reverse proxy with a valid public certificate, forwarding `/telegram` to `127.0.0.1:3000`. Set:
 
@@ -194,6 +210,7 @@ This deletes the requester's user record and every affected shared ledger with i
 ## Layout
 
 - `src/money.ts`: parsing, splitting and signed cents.
+- `src/miniapp.ts`, `public/`: Telegram-authenticated Mini App and ledger API/UI.
 - `src/service.ts`: authorization, transactions and ledger state transitions.
 - `src/bot.ts`: German inline UI and callbacks.
 - `src/main.ts`, `config.ts`, `webhook.ts`: transport and startup.
