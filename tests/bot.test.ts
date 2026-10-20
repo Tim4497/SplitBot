@@ -62,6 +62,11 @@ describe.skipIf(!process.env.DATABASE_URL)("Telegram event integration", () => {
       }),
     ).toBe(0);
   });
+  it("does not offer auto-booking when the sender has no shared ledger", async () => {
+    const result = (await inline("5 Lunch", lisa)).results[0];
+    expect(result.title).toBe("Zuerst Abrechnung einrichten");
+    expect(result.reply_markup).toBeUndefined();
+  });
   it("handles inline setup, creator booking and private balance", async () => {
     const chat = prefix + "chat",
       message = prefix + "setup";
@@ -76,35 +81,61 @@ describe.skipIf(!process.env.DATABASE_URL)("Telegram event integration", () => {
     ).toBe("CONFIRMED");
     const expense = (await inline("40 Abendessen")).results[0].id;
     const em = prefix + "expense";
-    await click(`bind:${expense}`, chat, em);
+    const expenseResult = sent
+      .filter((x) => x.method === "answerInlineQuery")
+      .at(-1)!.payload.results[0];
+    expect(expenseResult.reply_markup).toBeUndefined();
+    expect(expenseResult.input_message_content.message_text).toBe(
+      'Anna added "40,00 € for Abendessen"',
+    );
+    await bot.handleUpdate({
+      update_id: ++sequence,
+      chosen_inline_result: {
+        result_id: expense,
+        from: anna,
+        query: "40 Abendessen",
+        inline_message_id: em,
+      },
+    });
     expect(
       (await db.expenseDraft.findUniqueOrThrow({ where: { id: expense } }))
         .status,
     ).toBe("CONFIRMED");
     expect(await db.expense.count({ where: { draftId: expense } })).toBe(1);
-    const savedExpense = sent
-      .filter((x) => x.method === "editMessageText")
-      .at(-1)!.payload;
-    expect(savedExpense.text).toBe('Anna added "40,00 € for Abendessen"');
-    expect(savedExpense.reply_markup.inline_keyboard).toEqual([]);
     const repayment = (await inline("ausgleich 5", max)).results[0].id;
-    await click(`bind:${repayment}`, chat, prefix + "repayment", max);
-    const savedRepayment = sent
-      .filter((x) => x.method === "editMessageText")
-      .at(-1)!.payload;
-    expect(savedRepayment.text).toBe("Max recorded a repayment of 5,00 €");
-    expect(savedRepayment.reply_markup.inline_keyboard).toEqual([]);
-    const financialButtons = sent
-      .filter((x) => x.method === "editMessageReplyMarkup")
-      .flatMap((x) => x.payload.reply_markup.inline_keyboard.flat());
-    expect(
-      financialButtons.some((b: any) =>
-        /confirm:|privacy:/i.test(b.callback_data),
-      ),
-    ).toBe(false);
-    expect(financialButtons.map((b: any) => b.text)).not.toContain(
-      "Datenschutz",
+    const repaymentResult = sent
+      .filter((x) => x.method === "answerInlineQuery")
+      .at(-1)!.payload.results[0];
+    expect(repaymentResult.reply_markup).toBeUndefined();
+    expect(repaymentResult.input_message_content.message_text).toBe(
+      "Max recorded a repayment of 5,00 €",
     );
+    await bot.handleUpdate({
+      update_id: ++sequence,
+      chosen_inline_result: {
+        result_id: repayment,
+        from: max,
+        query: "ausgleich 5",
+        inline_message_id: prefix + "repayment",
+      },
+    });
+    const excessive = (await inline("ausgleich 30", max)).results[0].id;
+    await bot.handleUpdate({
+      update_id: ++sequence,
+      chosen_inline_result: {
+        result_id: excessive,
+        from: max,
+        query: "ausgleich 30",
+        inline_message_id: prefix + "excessive",
+      },
+    });
+    expect(
+      sent.filter((x) => x.method === "editMessageTextInline").at(-1)!.payload
+        .text,
+    ).toContain("Not saved");
+    expect(
+      await db.expenseDraft.findUniqueOrThrow({ where: { id: excessive } }),
+    ).toMatchObject({ status: "OPEN" });
     const status = (await inline("saldo")).results[0].id;
     await click(`bind:${status}`, chat, prefix + "status");
     const answer = await click(`saldo:${status}`, chat, prefix + "status", max);
@@ -127,7 +158,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Telegram event integration", () => {
         .some((x) => /schuldet|20,00/.test(x.payload.text)),
     ).toBe(false);
   });
-  it("chosen results pin identity but never book an expense", async () => {
+  it("books a chosen inline result immediately without a confirmation button", async () => {
     const id = (await inline("10 Kino")).results[0].id;
     await bot.handleUpdate({
       update_id: ++sequence,
@@ -139,9 +170,12 @@ describe.skipIf(!process.env.DATABASE_URL)("Telegram event integration", () => {
       },
     });
     expect(
+      (await db.expenseDraft.findUniqueOrThrow({ where: { id } })).status,
+    ).toBe("CONFIRMED");
+    expect(
       (await db.expenseDraft.findUniqueOrThrow({ where: { id } }))
         .inlineMessageId,
     ).toBe(prefix + "chosen");
-    expect(await db.expense.count({ where: { draftId: id } })).toBe(0);
+    expect(await db.expense.count({ where: { draftId: id } })).toBe(1);
   });
 });

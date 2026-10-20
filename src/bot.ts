@@ -50,18 +50,44 @@ export function createBot(
     const text = q.query.trim();
     try {
       const kind = text.toLowerCase();
+      const setupQuery = kind === "einrichten";
+      const statusQuery = kind === "saldo" || kind === "";
+      if (!setupQuery && !statusQuery) {
+        const ledgerStatus = await service.inlineLedgerStatus(q.from);
+        if (ledgerStatus !== "ready") {
+          const message =
+            ledgerStatus === "setup"
+              ? "Erstellt zuerst einmalig eine gemeinsame Abrechnung mit @Botname einrichten."
+              : "Automatisches Buchen braucht genau eine gemeinsame Abrechnung pro Nutzer.";
+          await ctx.answerInlineQuery(
+            [
+              {
+                type: "article",
+                id: "ledger-required",
+                title:
+                  ledgerStatus === "setup"
+                    ? "Zuerst Abrechnung einrichten"
+                    : "Mehrere Abrechnungen gefunden",
+                input_message_content: { message_text: message },
+              },
+            ],
+            { cache_time: 0, is_personal: true },
+          );
+          return;
+        }
+      }
       const d = kind.startsWith("storno ")
         ? await service.reversalFromInline(q.from, q.id, text.slice(7).trim())
         : await service.draft(
             q.from,
             q.id,
-            kind === "einrichten"
+            setupQuery
               ? { kind: "SETUP", description: "Einrichten" }
-              : kind === "saldo" || kind === ""
+              : statusQuery
                 ? { kind: "STATUS", description: "Kontostand" }
                 : parseQuery(text),
           );
-      const kb = new InlineKeyboard().text("Bestätigen", `bind:${d.id}`);
+      const needsCallback = d.kind === "SETUP" || d.kind === "STATUS";
       const result: InlineQueryResultArticle = {
         type: "article",
         id: d.id,
@@ -72,9 +98,18 @@ export function createBot(
               ? "Kontostand abrufen"
               : `${d.description} – ${euro(d.amount!)}`,
         input_message_content: {
-          message_text: preview(d, safeName(q.from.first_name)),
+          message_text: needsCallback
+            ? preview(d, safeName(q.from.first_name))
+            : recordedMessage(d, safeName(q.from.first_name)),
         },
-        reply_markup: kb,
+        ...(needsCallback
+          ? {
+              reply_markup: new InlineKeyboard().text(
+                d.kind === "SETUP" ? "Einrichten" : "Anzeigen",
+                `bind:${d.id}`,
+              ),
+            }
+          : {}),
       };
       await ctx.answerInlineQuery([result], {
         cache_time: 0,
@@ -105,8 +140,16 @@ export function createBot(
   });
   bot.on("chosen_inline_result", async (ctx) => {
     const r = ctx.chosenInlineResult;
-    if (r.inline_message_id)
+    if (!r.inline_message_id) return;
+    try {
       await service.chosen(r.from, r.result_id, r.inline_message_id);
+    } catch (e) {
+      if (!(e instanceof DomainError)) throw e;
+      await ctx.api.editMessageTextInline(
+        r.inline_message_id,
+        "Not saved. Check the balance or ledger setup, then enter it again.",
+      );
+    }
   });
   bot.on("callback_query:data", async (ctx) => {
     const q = ctx.callbackQuery;

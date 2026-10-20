@@ -6,8 +6,8 @@ A simple Telegram ledger for two friends. The Mini App supports expenses with a 
 
 - One permanent ledger per callback `chat_instance`, even at zero balance.
 - One-time setup: creator links the chat, and the other person joins to activate it.
-- Either participant can add an expense or repayment; only the person adding it taps to record it.
-- Recorded entries become one short message, with the draft button removed.
+- Either participant can add an expense or repayment directly in the friend's chat by selecting the inline result; selection records it immediately, with no per-entry confirmation.
+- Entries appear as one short chat message, without a bot button or draft text.
 - Mini App ledger: add expenses with a payer percentage, record repayments, edit or delete entries immediately.
 - Telegram-signed Mini App authentication and one-time invite codes to pair two users.
 - Partial/full settlements with commit-time debt validation.
@@ -18,15 +18,15 @@ A simple Telegram ledger for two friends. The Mini App supports expenses with a 
 
 ## Telegram limits — read before deployment
 
-An inline query gives the querying user and optionally a chat type, **not the peer or chat ID**. A callback provides the clicking user's ID, `chat_instance` and `inline_message_id`. These are the only identity/routing inputs used. Chosen-result feedback can pin the message, but never books anything.
+An inline query gives the querying user and optionally a chat type, **not the peer or chat ID**. The bot therefore auto-books an inline result only when its sender belongs to exactly one ledger. If there is no ledger, set it up in the friend chat once. If a user has multiple ledgers, automatic selection is disabled rather than guessing which friend owes the entry.
 
 The implementation rejects inline queries whose `chat_type` is not `private`. However, callbacks on inline messages do not independently prove that the destination is a private 1:1 chat, identify its other member, or reliably identify forwarding. The first person other than the creator to tap **Beitreten** activates the ledger; the bot cannot verify their relationship to the creator or independently verify private-chat membership. Shared messages can be distributed or forwarded.
 
-Only the draft creator can first bind a draft. For a new expense or repayment, the person who added it taps **Bestätigen** once; the other participant does not confirm it. Telegram does not include the destination chat identity in an inline query or chosen-result update, so this callback is required to safely bind and save the entry to the correct chat ledger. Once recorded, the draft is replaced by a single short message (for example, `Tim added "10,00 € for Abendessen"`), and its button is removed. Every later operation must match **both** stored identifiers. Every financial read/write checks ledger membership.
+One-time setup binds the two participants in the friend chat. After that, typing `@your_splitbot 10 Abendessen` and selecting its result adds and records one short message (for example, `Tim added "10,00 € for Abendessen"`). The other participant does not have to open a bot chat or approve entries. Telegram's chosen-result updates must be enabled at **100%** with BotFather `/setinlinefeedback`; otherwise Telegram may not notify the bot when a result is selected, and the ledger will not be updated. Every financial write checks ledger membership.
 
 To reduce forwarded-message disclosure, balances and history are shown in **private callback alerts** (Telegram's 200-character limit), not edited into shared messages. History is one entry per page; long descriptions/names are abbreviated for display but kept in the database. A and B in history correspond to the setup creator and joining participant. The initial expense preview is intentionally shared; recipients can forward it, copy it, or take screenshots. Existing Telegram messages and recipient copies cannot be recalled by database erasure.
 
-Unknown chat types and secret chats are unsupported. Inline mode does not require a private conversation with the bot; the Mini App is opened from the bot's private-chat menu. The exact username `@SplitBot` may be unavailable: use the username BotFather assigns.
+Unknown chat types and secret chats are unsupported. The inline workflow runs in the existing private chat with your friend; no separate private conversation with the bot is needed. The optional Mini App is a separate interface, not embedded in the friend chat. The exact username `@SplitBot` may be unavailable: use the username BotFather assigns.
 
 Official references checked 2026-10-18:
 
@@ -41,7 +41,7 @@ Official references checked 2026-10-18:
 1. Open the verified **@BotFather** account and run `/newbot`.
 2. Choose a display name and an available username ending in `bot`. Copy its token into your local `.env` only.
 3. Run `/setinline`, select the bot, and set a placeholder such as `12,50 Essen · saldo · einrichten`.
-4. Run `/setinlinefeedback`, select the bot, and choose **100%**. Feedback is optional for correctness; callbacks also bind the message.
+4. Run `/setinlinefeedback`, select the bot, and choose **100%**. This is required for automatic saving when a user selects an inline result.
 5. Run `/setjoingroups` and disable group joining. This does **not** disable inline use in groups by itself; application filtering still applies.
 6. Keep privacy mode enabled. Configure the bot description/profile to identify the operator and a real privacy/deletion contact.
 7. To enable the Mini App, configure an HTTPS domain with BotFather using `/setdomain`. Set `WEB_APP_URL` in `.env` to the public app URL on that domain. At startup, the bot installs a **Ledger** menu button in its private chat. Each person opens the bot chat and taps **Start** once to use that button.
@@ -112,7 +112,17 @@ Compose overrides `DATABASE_URL` for its internal database hostname. The `.env.e
 
 The same HTTPS reverse proxy should forward `/` and `/api/` to port 3000 for the Mini App, plus `/telegram` when using webhook mode. With `WEB_APP_URL` omitted, the Mini App is disabled and the inline bot continues to work.
 
-## 3. Use the Mini App
+## 3. Use the ledger in your friend's chat
+
+1. In the private chat with your friend, one person types `@your_splitbot einrichten` and inserts the setup result.
+2. That person taps **Einrichten** once; the friend taps **Beitreten** once. This pairs the two users for future automatic entries.
+3. To add an expense, type `@your_splitbot 10 Abendessen` and select the result. The result itself is the saved chat message; there is no follow-up confirmation.
+4. To record a repayment, type `@your_splitbot ausgleich 5` and select the result.
+5. Use `@your_splitbot saldo` to get the private balance alert.
+
+The inline bot can auto-save only if the user has exactly one ledger. This avoids guessing when a person tracks multiple friends. The BotFather **100% inline feedback** setting is necessary for persistence.
+
+## 4. Use the Mini App
 
 1. Each person opens the bot's private chat and taps **Start**, then opens **Ledger** from the chat menu.
 2. One person creates an invite code and shares it with the friend. The friend opens the app and enters that code once to join the same ledger.
@@ -122,24 +132,9 @@ The same HTTPS reverse proxy should forward `/` and `/api/` to port 3000 for the
 
 The Mini App does not post into the existing 1:1 chat: Telegram does not give a bot access to send messages in a private conversation where it is not a participant. Both friends use the shared ledger inside the Mini App. For an existing inline ledger, either participant can create an invite from that ledger in the app so the other participant can access the same records there.
 
-## 4. Use it in an existing private chat
+Expenses accept `12,50`, `12.50`, `12€`, and `12 EUR`; thousands separators, negative/zero amounts, scientific notation, and more than two decimal places are rejected. Description is required, maximum 120 characters. Limit: EUR 10,000,000 per entry. Expenses split 50/50 in inline mode; for custom percentages, use the optional Mini App.
 
-Replace `@your_splitbot` with your own username.
-
-1. Anna types `@your_splitbot einrichten` and inserts the result.
-2. Anna taps **Bestätigen** to link the chat.
-3. Max taps **Beitreten** once; the ledger is active immediately.
-4. Anna types `@your_splitbot 40€ Abendessen`, inserts the result and taps **Bestätigen**. The other participant sees only `Anna added "40,00 € for Abendessen"` after it is recorded.
-5. Use `@your_splitbot saldo`, insert the result, and tap **Saldo**. Each participant sees the balance privately.
-6. Max records `@your_splitbot 16 Taxi` and taps **Bestätigen**. Balance: Max owes Anna EUR 12. Anna does not need to approve Max's entry.
-7. After Max pays Anna, he records `@your_splitbot ausgleich 12` and taps **Bestätigen**. Balance: zero; the ledger remains active.
-8. Weeks later Anna records `@your_splitbot 10 Kino`. Same ledger, Max owes EUR 5.
-
-`12,50`, `12.50`, `12€`, and `12 EUR` are accepted. Thousands separators, negative/zero amounts, scientific notation, and more than two decimal places are rejected. Description required for expenses, maximum 120 characters. Limit: EUR 10,000,000 per entry. In a EUR 10.01 expense, the payer bears EUR 5.01 and the peer EUR 5.00; the extra cent always stays with the payer.
-
-Only creator-confirmed entries affect balance. Setup activates when the second person taps **Beitreten**. A draft expires after 24 hours. Failed/double clicks cannot duplicate booking. A payment exceeding the current debt, or by the wrong debtor, is rejected. Re-enter a corrected draft if a payment is rejected after the balance changed.
-
-For cancellation: open **Verlauf**, navigate to the entry, choose **Storno vorbereiten**, insert the resulting inline draft in the same chat, and tap **Bestätigen**. The original remains visible and the reversal cancels its signed contribution. Undoing an expense after a settlement can correctly create a debt in the opposite direction. Stale balances are snapshots; refresh to obtain the latest committed value.
+Repayments that exceed the current debt or go in the wrong direction are not recorded; the chat message is changed to explain that the entry was not saved. To reverse an expense, use `@your_splitbot saldo` for the balance or `@your_splitbot storno EVENT_ID` for a reversal; reversal entries are auditable.
 
 ## 5. Production webhooks
 

@@ -107,24 +107,55 @@ export class LedgerService {
     });
   }
   async chosen(who: Identity, id: string, message: string) {
-    return this.tx(async (tx) => {
-      const d = await tx.expenseDraft.findUnique({
-        where: { id },
-        include: { creator: true },
-      });
-      if (
-        !d ||
-        d.creator.telegramId !== BigInt(who.id) ||
-        d.status !== "OPEN" ||
-        d.expiresAt < new Date()
-      )
-        return;
-      if (d.inlineMessageId && d.inlineMessageId !== message) return;
-      await tx.expenseDraft.update({
-        where: { id },
-        data: { inlineMessageId: message },
-      });
+    const d = await this.db.expenseDraft.findUnique({
+      where: { id },
+      include: { creator: true },
     });
+    if (
+      !d ||
+      d.creator.telegramId !== BigInt(who.id) ||
+      !["EXPENSE", "SETTLEMENT", "REVERSAL"].includes(d.kind) ||
+      d.expiresAt < new Date()
+    )
+      return fail("Buchung nicht gespeichert. Bitte erneut eingeben.");
+    if (d.status === "CONFIRMED") return;
+    const user = await this.db.user.findUnique({
+      where: { telegramId: BigInt(who.id) },
+    });
+    if (!user)
+      return fail("Buchung nicht gespeichert. Bitte Abrechnung einrichten.");
+    const ledgers = await this.db.ledger.findMany({
+      where: {
+        OR: [{ participantA: user.id }, { participantB: user.id }],
+      },
+      select: { chatInstance: true },
+      take: 2,
+    });
+    if (ledgers.length !== 1)
+      return fail(
+        "Buchung nicht gespeichert. Es muss genau eine Abrechnung eingerichtet sein.",
+      );
+    await this.act(who, id, "bind", {
+      chat: ledgers[0]!.chatInstance,
+      message,
+    });
+  }
+  async inlineLedgerStatus(
+    who: Identity,
+  ): Promise<"setup" | "multiple" | "ready"> {
+    const user = await this.db.user.findUnique({
+      where: { telegramId: BigInt(who.id) },
+    });
+    if (!user) return "setup";
+    const ledgers = await this.db.ledger.findMany({
+      where: {
+        OR: [{ participantA: user.id }, { participantB: user.id }],
+      },
+      select: { id: true },
+      take: 2,
+    });
+    if (ledgers.length === 0) return "setup";
+    return ledgers.length === 1 ? "ready" : "multiple";
   }
   async act(who: Identity, id: string, action: string, c: Binding) {
     if (!c.chat || !c.message)
